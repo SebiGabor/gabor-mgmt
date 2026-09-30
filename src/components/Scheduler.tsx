@@ -8,6 +8,7 @@ type Block = { id: number; date: string; start_min: number; end_min: number; tit
 type Cat = { id: number; name: string; color: string };
 type Task = { id: number; title: string; est_minutes: number };
 type Edit = { id?: number; start: number; end: number; title: string; kind: string; task_id: number | null };
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
 const STEP = 10; // minute; 1 minut = 1px
 const hm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const toMin = (v: string, isEnd = false) => { const [h, m] = v.split(':').map(Number), x = h * 60 + m; return isEnd && x === 0 ? 1440 : x; };
@@ -24,6 +25,8 @@ export default function Scheduler() {
   const [edit, setEdit] = useState<Edit | null>(null);
   const [showCats, setShowCats] = useState(false);
   const [taskId, setTaskId] = useState('');
+  const [now, setNow] = useState(nowMin());
+  const gridRef = useRef<HTMLDivElement>(null);
   const [ghost, setGhost] = useState<{ id: number; s: number; e: number } | null>(null);
   const ghostRef = useRef<typeof ghost>(null);
   const drag = useRef<{ id: number; mode: 'move' | 'resize'; y0: number; s0: number; e0: number; moved: boolean } | null>(null);
@@ -34,6 +37,12 @@ export default function Scheduler() {
     setTasks(await q<Task>('SELECT id,title,est_minutes FROM tasks WHERE done=0 ORDER BY due_at IS NULL, due_at'));
   }, [date]);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => { const i = setInterval(() => setNow(nowMin()), 30000); return () => clearInterval(i); }, []);
+  const isToday = date === new Date().toLocaleDateString('sv');
+  useEffect(() => { // la deschiderea zilei curente, derulează în dreptul orei curente
+    if (isToday && gridRef.current) window.scrollTo({ top: gridRef.current.getBoundingClientRect().top + window.scrollY + nowMin() - 200, behavior: 'smooth' });
+  }, [isToday]);
 
   const color = (k: string) => cats.find(c => c.name === k)?.color ?? '#52525b';
   const free = (s: number, e: number, ignore = 0) => !blocks.some(b => b.id !== ignore && b.start_min < e && b.end_min > s);
@@ -97,7 +106,7 @@ export default function Scheduler() {
           <option value="">Task de programat…</option>{tasks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select>
         <button onClick={quickAssign} className="rounded-xl bg-violet-600 px-3 text-sm">Programează</button>
       </div>
-      <div className="relative rounded-2xl border border-zinc-800 bg-zinc-900/40 select-none" style={{ height: 1440 }}
+      <div ref={gridRef} className="relative rounded-2xl border border-zinc-800 bg-zinc-900/40 select-none" style={{ height: 1440 }}
         onDragOver={e => e.preventDefault()}
         onDrop={e => { const t = tasks.find(x => x.id === +e.dataTransfer.getData('task')); if (!t) return; const r = e.currentTarget.getBoundingClientRect(); placeTask(t, Math.floor((e.clientY - r.top) / STEP) * STEP); }}
         onClick={e => { if ((e.target as HTMLElement).closest('[data-block]')) return; const r = e.currentTarget.getBoundingClientRect(); const s = Math.min(Math.floor((e.clientY - r.top) / STEP) * STEP, 1430); setEdit({ start: s, end: Math.min(s + 30, 1440), title: '', kind: cats[0]?.name ?? 'task', task_id: null }); }}>
@@ -117,6 +126,12 @@ export default function Scheduler() {
               <div onPointerDown={ev => { ev.stopPropagation(); begin(ev, b, 'resize'); }} className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize bg-white/25" />
             </div>);
         })}
+        {isToday && (
+          <div className="absolute inset-x-0 z-20 pointer-events-none flex items-center" style={{ top: now - 4 }}>
+            <span className="ml-1 rounded bg-red-500 px-1 text-[10px] font-medium leading-4">{hm(now)}</span>
+            <div className="flex-1 h-px bg-red-500" />
+            <span className="size-2 rounded-full bg-red-500 mr-1" />
+          </div>)}
       </div>
       <div className="hidden md:block mt-3 text-xs text-zinc-500">Trage un task în orar:{' '}
         {tasks.slice(0, 6).map(t => <span key={t.id} draggable onDragStart={e => e.dataTransfer.setData('task', String(t.id))} className="inline-block m-1 cursor-grab rounded-full bg-zinc-800 px-2 py-1 text-zinc-300">{t.title}</span>)}</div>
